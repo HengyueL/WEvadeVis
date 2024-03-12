@@ -1,6 +1,6 @@
 # Official Implementation of WEvade
 
-This code is the official implementation of our paper: Evading Watermark based Detection of AI-Generated Content [Paper](https://arxiv.org/abs/2305.03807).
+This code is the official implementation of our CCS'23 paper: Evading Watermark based Detection of AI-Generated Content [Paper](https://arxiv.org/abs/2305.03807).
 
 ## Preparation
 
@@ -79,7 +79,7 @@ python3 existing_post_processing.py --checkpoint './ckpt/coco_adv_train.pth' --d
 
 ## Citation
 
-If you find our work useful for your research, please consider citing the paper (To appear in ACM CCS 2023)
+If you find our work useful for your research, please consider citing the paper
 ```
 @inproceedings{jiang2023evading,
   title={Evading Watermark based Detection of AI-Generated Content},
