@@ -26,7 +26,7 @@ def main():
     parser.add_argument('--epsilon', default=0.01, type=float, help='Epsilon used in WEvdae-W.')
     parser.add_argument('--alpha', default=0.1, type=float, help='Learning rate used in WEvade-W.')
     parser.add_argument('--rb', default=2, type=float, help='Upper bound of perturbation.')
-    parser.add_argument('--WEvade-type', default='WEvade-W-II', type=str, help='Using WEvade-W-I/II.')
+    parser.add_argument('--WEvade-type', default='WEvade-W-I', type=str, help='Using WEvade-W-I/II.')
     parser.add_argument('--detector-type', default='double-tailed', type=str, help='Using double-tailed/single-tailed detctor.')
     # In our algorithm, we use binary-search to obtain perturbation upper bound. But in the experiment, we find
     # binary-search actually has no significant effect on the perturbation results. And we reduce time cost if not
