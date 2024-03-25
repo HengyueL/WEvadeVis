@@ -4,12 +4,13 @@ import argparse
 import time
 from tqdm import tqdm
 import os
-from utils import get_data_loaders, transform_image, AverageMeter
+from utils import get_data_loaders
 from model.model import Model
 from WEvade import WEvade_W, WEvade_W_binary_search_r
 
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.linalg import svd
 
 
 MEAN, STD = 0.5, 0.5
@@ -43,17 +44,34 @@ def main(args):
     dataiter = iter(data_loader)
 
     # === Read a image ===
-    for _ in range(5):
+    for _ in range(2):
         next(dataiter)
     images_tensor, labels_tensor = next(dataiter)
     img_np = np.transpose(images_tensor.cpu().numpy()[0, :, :, :], [1, 2, 0])
 
+    # === Visualize Figure ===
     figure = plt.figure()
     plt.imshow(normalize_img_np(img_np))
     save_name = os.path.join(vis_root_dir, "image_orig.png")
     plt.savefig(save_name)
     plt.close(figure)
-    
+
+    # ==== Perform a svd decomp ====
+    u1_list, s1_list, v1_list = [], [], []
+    for axis in range(3):
+        array = img_np[:, :, axis]
+        U, s1, V = svd(array)
+        s1_list.append(s1)
+
+    # Visualize singular values
+    figure, ax = plt.subplots(ncols=1, nrows=3)
+    for idx in range(3):
+        s = s1_list[idx]
+        ax[idx].bar(list(range(len(s))), s)
+    save_name = os.path.join(vis_root_dir, "svd_orig.png")
+    plt.savefig(save_name)
+    plt.close(figure)
+
     # === Load Watermark ===
     gt_watermark_np = np.load('./watermark/watermark_coco.npy')
     groundtruth_watermark = torch.from_numpy(gt_watermark_np).to(device)
@@ -79,6 +97,33 @@ def main(args):
     plt.savefig(save_name)
     plt.close(figure)
 
+    # ==== Perform a svd decomp ====
+    u2_list, s2_list, v2_list = [], [], []
+    for axis in range(3):
+        array = watermarked_img_np[:, :, axis]
+        U, s2, V = svd(array)
+        s2_list.append(s2)
+
+    # Visualize singular values
+    figure, ax = plt.subplots(ncols=1, nrows=3)
+    for idx in range(3):
+        s = s2_list[idx]
+        ax[idx].bar(list(range(len(s))), s)
+    save_name = os.path.join(vis_root_dir, "svd_watermarked.png")
+    plt.savefig(save_name)
+    plt.close(figure)
+
+    # Visualize diff singular values
+    figure, ax = plt.subplots(ncols=1, nrows=3)
+    for idx in range(3):
+        s_diff = s1_list[idx] - s2_list[idx]
+        ax[idx].bar(list(range(len(s_diff))), s_diff)
+    save_name = os.path.join(vis_root_dir, "svd_diff.png")
+    plt.savefig(save_name)
+    plt.close(figure)
+
+
+    # === Visualize Diff Image ===
     img_diff = ((watermarked_img_np - img_np) + 2) / 4
     figure = plt.figure()
     plt.imshow(img_diff)
@@ -87,15 +132,19 @@ def main(args):
     plt.close(figure)
 
     # === Decode Watermark ===
-    watermark_decoded = model.decoder(watermarked_image).round().clip(0, 1).to(dtype=torch.long)
+    watermark_decoded_raw = model.decoder(watermarked_image)
+    watermark_decoded = watermark_decoded_raw.round().clip(0, 1).to(dtype=torch.long)
     watermark_decoded_np = watermark_decoded.detach().cpu().numpy()
     print("Orig Watermark: ", gt_watermark_np)
     print("Decoded       : ", watermark_decoded_np)
+    print("  Raw         : ", watermark_decoded_raw.detach().cpu().numpy())
 
     # === Decode a watermark from "natural" image ===
-    natural_watermark = model.decoder(images_tensor).round().clip(0, 1).to(dtype=torch.long)
+    natural_watermark_raw = model.decoder(images_tensor)
+    natural_watermark = natural_watermark_raw.round().clip(0, 1).to(dtype=torch.long)
     natural_watermark_np = natural_watermark.detach().cpu().numpy()
     print("Natural       : ", natural_watermark_np)
+    print("  Raw         : ", natural_watermark_raw.detach().cpu().numpy())
 
     print("Bit-wise accuracy: ")
     print("Decoded: ", np.mean(watermark_decoded_np == gt_watermark_np) * 100)
