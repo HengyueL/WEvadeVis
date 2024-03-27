@@ -65,7 +65,7 @@ def main(args):
     dataiter = iter(data_loader)
 
     # === Read a image ===
-    for _ in range(10):
+    for _ in range(9):
         images_tensor, labels_tensor = next(dataiter)
     img_np = np.transpose(images_tensor.cpu().numpy()[0, :, :, :], [1, 2, 0])
 
@@ -142,7 +142,10 @@ def main(args):
         fft_2 = fft_2_list[idx]
         fft_1 = fft_1_list[idx]
         # recon_fft = fft_2 * np.sum(np.absolute(fft_1)) / np.sum(np.absolute(fft_2))
-        recon_fft = fft_2 * 0.95
+        if idx == 0:
+            recon_fft = fft_2 * 0.9
+        else:
+            recon_fft = fft_2 * 1.05
         recon_array = calculate_2dift(recon_fft)
         recon_img_list.append(recon_array)
     recon_img = np.stack(recon_img_list, axis=2)
@@ -152,69 +155,48 @@ def main(args):
     plt.savefig(save_name)
     plt.close(figure)
 
+    # Visualize fft error magnitude
+    figure, ax = plt.subplots(nrows=3)
+    for idx in range(3):
+        fft_2 = fft_2_list[idx]
+        fft_1 = fft_1_list[idx]
 
+        err_magnitude = np.absolute(fft_2) - np.absolute(fft_1)
+        print("Channel {} - [Min - Max] - [{} - {}]".format(idx, np.min(err_magnitude), np.amax(err_magnitude)))
+        ax[idx].imshow((err_magnitude - np.amin(err_magnitude))/(np.amax(err_magnitude) - np.amin(err_magnitude)) )
+    save_name = os.path.join(vis_root_dir, "fourier_err_magnitude.png")
+    plt.savefig(save_name)
+    plt.close(figure)
 
-    # # === Visualize Diff Image ===
-    # img_diff = ((watermarked_img_np - img_np) + 2) / 4
-    # save_name = os.path.join(vis_root_dir, "image_diff.png")
-    # plot_image(img_diff, save_name)
+    # === Decode Watermark ===
+    watermark_decoded_raw = model.decoder(watermarked_image)
+    watermark_decoded = watermark_decoded_raw.round().clip(0, 1).to(dtype=torch.long)
+    watermark_decoded_np = watermark_decoded.detach().cpu().numpy()
+    print("Orig Watermark: ", gt_watermark_np)
+    print("Decoded       : ", watermark_decoded_np)
+    # print("  Raw         : ", watermark_decoded_raw.detach().cpu().numpy())
 
-    # # ==== Try an SVD decomp ===
-    # recon_img_list = []
-    # for idx in range(3):
-    #     U = u2_list[idx]
-    #     V = v2_list[idx]
-    #     s = s2_list[idx]
-    #     # === Manipulat the singular values ===
-    #     end = 20
-    #     energy_ratio = np.sum(s[0:end]) / np.sum(s)
-    #     print("Energy Ratio: ", energy_ratio)
-    #     factor = 0.9
-    #     s_top = s[0:end]
-    #     s = s * (1 + (1-factor)*energy_ratio/(1-energy_ratio))
-    #     s[0:end] = s_top * factor
+    # === Decode a watermark from the "reconstructed" image ===
+    recon_img = np.transpose(recon_img, [2, 0, 1])
+    recon_img = recon_img[np.newaxis, :, :, :]
+    recon_img_tensor = torch.from_numpy(recon_img).to(device, dtype=torch.float)
+    recon_img_tensor = (recon_img_tensor - MEAN) / STD
+    watermark_recon_raw = model.decoder(recon_img_tensor)
+    watermark_recon = watermark_recon_raw.round().clip(0, 1).to(dtype=torch.long)
+    watermarK_recon_np = watermark_recon.detach().cpu().numpy()
+    print("Recon         : ", watermarK_recon_np)
 
-    #     recon_arr = U @ np.diag(s) @ V
-    #     recon_img_list.append(recon_arr)
-    # recon_img = np.stack(recon_img_list, 2)
-    # print("Recognize image shape: ", recon_img.shape)
-    # print()
+    # === Decode a watermark from "natural" image ===
+    natural_watermark_raw = model.decoder(images_tensor)
+    natural_watermark = natural_watermark_raw.round().clip(0, 1).to(dtype=torch.long)
+    natural_watermark_np = natural_watermark.detach().cpu().numpy()
+    print("Natural       : ", natural_watermark_np)
+    # print("  Raw         : ", natural_watermark_raw.detach().cpu().numpy())
 
-    # figure, ax = plt.subplots(ncols=1, nrows=1)
-    # ax.imshow(recon_img)
-    # save_name = os.path.join(vis_root_dir, "image_recon.png")
-    # plt.savefig(save_name)
-    # plt.close(figure)
-
-    # # === Decode Watermark ===
-    # watermark_decoded_raw = model.decoder(watermarked_image)
-    # watermark_decoded = watermark_decoded_raw.round().clip(0, 1).to(dtype=torch.long)
-    # watermark_decoded_np = watermark_decoded.detach().cpu().numpy()
-    # print("Orig Watermark: ", gt_watermark_np)
-    # print("Decoded       : ", watermark_decoded_np)
-    # # print("  Raw         : ", watermark_decoded_raw.detach().cpu().numpy())
-
-    # # === Decode a watermark from the "reconstructed" image ===
-    # recon_img = np.transpose(recon_img, [2, 0, 1])
-    # recon_img = recon_img[np.newaxis, :, :, :]
-    # recon_img_tensor = torch.from_numpy(recon_img).to(device, dtype=torch.float)
-    # recon_img_tensor = (recon_img_tensor - MEAN) / STD
-    # watermark_recon_raw = model.decoder(recon_img_tensor)
-    # watermark_recon = watermark_recon_raw.round().clip(0, 1).to(dtype=torch.long)
-    # watermarK_recon_np = watermark_recon.detach().cpu().numpy()
-    # print("Recon         : ", watermarK_recon_np)
-
-    # # === Decode a watermark from "natural" image ===
-    # natural_watermark_raw = model.decoder(images_tensor)
-    # natural_watermark = natural_watermark_raw.round().clip(0, 1).to(dtype=torch.long)
-    # natural_watermark_np = natural_watermark.detach().cpu().numpy()
-    # print("Natural       : ", natural_watermark_np)
-    # # print("  Raw         : ", natural_watermark_raw.detach().cpu().numpy())
-
-    # print("Bit-wise accuracy: ")
-    # print("Decoded: ", np.mean(watermark_decoded_np == gt_watermark_np) * 100)
-    # print("Recon  : ", np.mean(watermarK_recon_np == gt_watermark_np) * 100)
-    # print("Natural: ", np.mean(natural_watermark_np == gt_watermark_np) * 100)
+    print("Bit-wise accuracy: ")
+    print("Decoded: ", np.mean(watermark_decoded_np == gt_watermark_np) * 100)
+    print("Recon  : ", np.mean(watermarK_recon_np == gt_watermark_np) * 100)
+    print("Natural: ", np.mean(natural_watermark_np == gt_watermark_np) * 100)
 
 
 if __name__ == "__main__":
