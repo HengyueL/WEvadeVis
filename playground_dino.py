@@ -9,6 +9,7 @@ from model.model import Model
 from WEvade import WEvade_W, WEvade_W_binary_search_r
 import numpy as np
 import matplotlib.pyplot as plt
+from skimage.metrics import peak_signal_noise_ratio as compare_psnr
 
 
 MEAN, STD = 0.5, 0.5
@@ -50,62 +51,90 @@ def main(args):
     dataiter = iter(data_loader)
 
     # === Read a image ===
-    for _ in range(2):
+    for _ in range(10):
         next(dataiter)
-    images_tensor, labels_tensor = next(dataiter)
+        images_tensor, labels_tensor = next(dataiter)
 
-    # === Visualize Figure ===
-    img_np = np.transpose(images_tensor.cpu().numpy()[0, :, :, :], [1, 2, 0])
-    save_name = os.path.join(vis_root_dir, "image_orig.png")
-    plot_image(normalize_img_np(img_np), save_name)
+        # === Visualize Figure ===
+        img_np = np.transpose(images_tensor.cpu().numpy()[0, :, :, :], [1, 2, 0])
+        save_name = os.path.join(vis_root_dir, "image_orig.png")
+        plot_image(normalize_img_np(img_np), save_name)
 
-    # === Load Watermark ===
-    gt_watermark_np = np.load('./watermark/watermark_coco.npy')
-    groundtruth_watermark = torch.from_numpy(gt_watermark_np).to(device)
+        # === Load Watermark ===
+        gt_watermark_np = np.load('./watermark/watermark_coco.npy')
+        groundtruth_watermark = torch.from_numpy(gt_watermark_np).to(device)
 
-    images_tensor = images_tensor.to(device)
-    images_tensor = transform_image(images_tensor, device)
-    watermarked_image = model.encoder(images_tensor, groundtruth_watermark)
-    watermarked_image = transform_image(watermarked_image, device=device)
+        images_tensor = images_tensor.to(device)
+        images_tensor = transform_image(images_tensor, device)
+        watermarked_image = model.encoder(images_tensor, groundtruth_watermark)
+        watermarked_image = transform_image(watermarked_image, device=device)
 
-    # === Vis watermarked image ===
-    watermarked_image_np = (watermarked_image.detach().cpu().numpy()[0, :, :, :] + 1) / 2.
-    watermarked_img_np = np.transpose(
-        watermarked_image_np,
-        [1, 2, 0]
-    )
-    save_name = os.path.join(vis_root_dir, "image_watermarked.png")
-    plot_image(watermarked_img_np, save_name)
+        # === Vis watermarked image ===
+        watermarked_image_np = (watermarked_image.detach().cpu().numpy()[0, :, :, :] + 1) / 2.
+        watermarked_img_np = np.transpose(
+            watermarked_image_np,
+            [1, 2, 0]
+        )
+        save_name = os.path.join(vis_root_dir, "image_watermarked.png")
+        plot_image(watermarked_img_np, save_name)
 
-    # Calculate DINO encoding
-    upsampler = torch.nn.Upsample(size=224, mode='bilinear')
-    orig_encoding = dino_backbone(upsampler(images_tensor)).view(1, -1)
-    watermarked_encoding = dino_backbone(upsampler(watermarked_image)).view(1, -1)
+        # Calculate DINO encoding
+        upsampler = torch.nn.Upsample(size=224, mode='bilinear')
+        orig_encoding = dino_backbone(upsampler(images_tensor)).view(1, -1)
+        watermarked_encoding = dino_backbone(upsampler(watermarked_image)).view(1, -1)
 
-    # Benchmarked by a noisy iamge
-    noise = 0.05 * torch.randn_like(images_tensor) + images_tensor
-    # == Visualize Noise Image ==
-    noise_np = (noise.clone().cpu().numpy()[0, :, :, :] + 1) / 2.
-    noisy_img_np = np.transpose(
-        noise_np,
-        [1, 2, 0]
-    )
-    save_name = os.path.join(vis_root_dir, "image_noisy.png")
-    plot_image(noisy_img_np, save_name)
+        # Benchmarked by a noisy iamge
+        noise = 0.01 * torch.randn_like(images_tensor) + images_tensor
+        # == Visualize Noise Image ==
+        noise_np = (noise.clone().cpu().numpy()[0, :, :, :] + 1) / 2.
+        noisy_img_np = np.transpose(
+            noise_np,
+            [1, 2, 0]
+        )
+        save_name = os.path.join(vis_root_dir, "image_noisy.png")
+        plot_image(noisy_img_np, save_name)
 
-    noise_encoding = dino_backbone(upsampler(noise)).view(1, -1)
-    l2_dist = torch.linalg.norm(
-        orig_encoding - watermarked_encoding,
-        ord=2,
-        dim=1
-    )
-    l2_noise_dist = torch.linalg.norm(
-        noise_encoding - orig_encoding,
-        ord=2,
-        dim=1
-    )
-    print("Dino Encoding L2 Dist: {} - Noise {}".format(l2_dist.item(), l2_noise_dist.item()))
+        noise_encoding = dino_backbone(upsampler(noise)).view(1, -1)
+        l2_dist = torch.linalg.norm(
+            orig_encoding - watermarked_encoding,
+            ord=2,
+            dim=1
+        )
+        l2_noise_dist = torch.linalg.norm(
+            noise_encoding - orig_encoding,
+            ord=2,
+            dim=1
+        )
+        print("Dino Encoding L2 Dist: {} - Noise {}".format(l2_dist.item(), l2_noise_dist.item()))
 
+        # Check Gaussian PSNR
+        psrn_noisy = compare_psnr(noisy_img_np, normalize_img_np(img_np), data_range=1)
+        print("Noisy Image PSNR: ", psrn_noisy)
+
+        # Decode watermarks
+        watermark_decoded_raw = model.decoder(watermarked_image)
+        watermark_decoded = watermark_decoded_raw.round().clip(0, 1).to(dtype=torch.long)
+        watermark_decoded = watermark_decoded.detach().cpu().numpy()
+        watermark_decoded_raw = watermark_decoded_raw.detach().cpu().numpy()
+
+        watermark_noise_raw = model.decoder(noise)
+        watermark_noise = watermark_noise_raw.round().clip(0, 1).to(dtype=torch.long)
+        watermark_noise = watermark_noise.detach().cpu().numpy()
+        watermark_noise_raw = watermark_noise_raw.detach().cpu().numpy()
+
+        print("Display Watermarks")
+        print("GT      : ", gt_watermark_np)
+        print("Decoded : ", watermark_decoded)
+        print("NoisyImg: ", watermark_noise)
+
+        # print("Raw prediction values: ")
+        # print("GT      : ", gt_watermark_np)
+        # print("Decoded : ", watermark_decoded_raw)
+        # print("NoisyImg: ", watermark_noise_raw)
+
+        print("Bit-wise accuracy: ")
+        print("Decoded: ", np.mean(watermark_decoded == gt_watermark_np) * 100)
+        print("Noisy  : ", np.mean(watermark_noise == gt_watermark_np) * 100)
 
 
 if __name__ == "__main__":
